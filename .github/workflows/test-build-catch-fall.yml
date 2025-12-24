@@ -1,0 +1,53 @@
+name: Test Build Catch Fall
+
+on:
+  push:
+    paths:
+      - 'gv_catch_fall/**'
+      - '.github/workflows/test-build-catch-fall.yml'
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > gloven-keystore.jks
+          
+      - name: Create key.properties
+        run: |
+          cd gv_catch_fall/android
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> key.properties
+          echo "storeFile=../../gloven-keystore.jks" >> key.properties
+          
+      - name: Get Dependencies
+        run: |
+          cd gv_catch_fall
+          flutter pub get
+          
+      - name: Build App Bundle
+        run: |
+          cd gv_catch_fall
+          flutter build appbundle --release
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: catch-fall-release-aab
+          path: gv_catch_fall/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 5

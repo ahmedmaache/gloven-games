@@ -1,0 +1,50 @@
+# Flutter/Dart
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/pubspec.lock
+
+# Android
+**/*.jks
+**/key.properties
+**/*.keystore
+**/local.properties
+**/.gradle/
+**/gradlew
+**/gradlew.bat
+**/android/.cxx/
+
+# iOS
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+
+# IDE
+**/.idea/
+**/*.iml
+**/.vscode/
+**/*.swp
+**/*.swo
+
+# macOS
+**/.DS_Store
+
+# Windows
+**/Thumbs.db
+
+# Misc
+**/*.log
+**/*.pyc
+**/__pycache__/
+**/venv/
+**/venv_*/
+**/*.tar.gz
+**/*.zip
+
+# Large files
+**/profiles_*.txt
