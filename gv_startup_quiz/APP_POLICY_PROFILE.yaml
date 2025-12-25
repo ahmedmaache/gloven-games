@@ -1,0 +1,38 @@
+﻿# APP_POLICY_PROFILE.yaml - Gloven Startup Quiz
+# Policy compliance and app identity configuration
+
+app_identity:
+  app_name: "Gloven Startup Quiz"
+  package_name: "org.gloven.startupquiz"
+  developer_display_name: "MIcho"
+  support_email: "m41258970@gmail.com"
+  privacy_policy_url: "https://gloven.org/privacy-policy-startupquiz"
+  version: "1.0.1"
+  version_code: 2
+
+target_audience:
+  primary_age_group: "everyone"
+  contains_ads: false
+  in_app_purchases: false
+  
+data_collection:
+  collects_personal_data: false
+  shares_data_with_third_parties: false
+  data_types_collected: []
+  
+permissions:
+  - none
+
+content_rating:
+  violence: "none"
+  sexual_content: "none"
+  profanity: "none"
+  drugs_alcohol: "none"
+  gambling: "none"
+  
+compliance:
+  offline_only: true
+  ad_free: true
+  tracking_free: true
+  gdpr_compliant: true
+  coppa_compliant: true
