@@ -1,0 +1,184 @@
+name: Build All Gloven Games
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'gv_*/**'
+      - '.github/workflows/build-all-apps.yml'
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.24.0'
+
+jobs:
+  build-apps:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: 
+          - gv_catch_fall
+          - gv_funny_sounds
+          - gv_match3
+          - gv_memory_cards
+          - gv_merge_puzzle
+          - gv_reflex_tap
+          - gv_runner
+          - gv_stack_blocks
+          - gv_startup_quiz
+          - gv_swipe_avoider
+          - gv_tictactoe
+      max-parallel: 5
+      fail-fast: false
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > gloven-keystore.jks
+          chmod 600 gloven-keystore.jks
+
+      - name: Create key.properties
+        run: |
+          cd ${{ matrix.app }}/android
+          cat > key.properties << EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=../../gloven-keystore.jks
+          EOF
+
+      - name: Get Dependencies
+        run: |
+          cd ${{ matrix.app }}
+          flutter pub get
+
+      - name: Build Signed AAB
+        run: |
+          cd ${{ matrix.app }}
+          flutter build appbundle --release
+
+      - name: Build APK (Optional)
+        run: |
+          cd ${{ matrix.app }}
+          flutter build apk --release
+        continue-on-error: true
+
+      - name: Get App Info
+        id: app_info
+        run: |
+          cd ${{ matrix.app }}
+          VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "app_name=${{ matrix.app }}" >> $GITHUB_OUTPUT
+
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-aab-v${{ steps.app_info.outputs.version }}
+          path: ${{ matrix.app }}/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-apk-v${{ steps.app_info.outputs.version }}
+          path: ${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # Job to create a combined release with all AABs
+  create-release:
+    needs: build-apps
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Display Artifacts
+        run: ls -la all-artifacts/
+
+      - name: Get Current Date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: release-${{ steps.date.outputs.date }}-${{ github.run_number }}
+          name: Gloven Games Build - ${{ steps.date.outputs.date }}
+          body: |
+            ## Gloven Games Build
+            
+            **Build Date:** ${{ steps.date.outputs.date }}
+            **Build Number:** ${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
+            
+            ### Included Apps (11)
+            - gv_catch_fall
+            - gv_funny_sounds
+            - gv_match3
+            - gv_memory_cards
+            - gv_merge_puzzle
+            - gv_reflex_tap
+            - gv_runner
+            - gv_stack_blocks
+            - gv_startup_quiz
+            - gv_swipe_avoider
+            - gv_tictactoe
+            
+            ### Download
+            All AAB files are attached to this release for Google Play Console upload.
+          files: all-artifacts/**/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Summary job to report build status
+  build-summary:
+    needs: build-apps
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## 🎮 Gloven Games Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| App | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_catch_fall | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_funny_sounds | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_match3 | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_memory_cards | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_merge_puzzle | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_reflex_tap | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_runner | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_stack_blocks | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_startup_quiz | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_swipe_avoider | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gv_tictactoe | ${{ needs.build-apps.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Apps:** 11" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Triggered By:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

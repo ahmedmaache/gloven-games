@@ -1,0 +1,164 @@
+name: Build Single App
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'Select the app to build'
+        required: true
+        type: choice
+        options:
+          - gv_catch_fall
+          - gv_funny_sounds
+          - gv_match3
+          - gv_memory_cards
+          - gv_merge_puzzle
+          - gv_reflex_tap
+          - gv_runner
+          - gv_stack_blocks
+          - gv_startup_quiz
+          - gv_swipe_avoider
+          - gv_tictactoe
+      build_apk:
+        description: 'Also build APK?'
+        required: false
+        type: boolean
+        default: true
+      create_release:
+        description: 'Create GitHub Release?'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  FLUTTER_VERSION: '3.24.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > gloven-keystore.jks
+          chmod 600 gloven-keystore.jks
+
+      - name: Create key.properties
+        run: |
+          cd ${{ github.event.inputs.app_name }}/android
+          cat > key.properties << EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=../../gloven-keystore.jks
+          EOF
+
+      - name: Get Dependencies
+        run: |
+          cd ${{ github.event.inputs.app_name }}
+          flutter pub get
+
+      - name: Analyze Code
+        run: |
+          cd ${{ github.event.inputs.app_name }}
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+        continue-on-error: true
+
+      - name: Build Signed AAB
+        run: |
+          cd ${{ github.event.inputs.app_name }}
+          flutter build appbundle --release
+
+      - name: Build APK
+        if: ${{ github.event.inputs.build_apk == 'true' }}
+        run: |
+          cd ${{ github.event.inputs.app_name }}
+          flutter build apk --release
+
+      - name: Get App Version
+        id: app_info
+        run: |
+          cd ${{ github.event.inputs.app_name }}
+          VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d '[:space:]')
+          VERSION_NAME=$(echo $VERSION | cut -d'+' -f1)
+          VERSION_CODE=$(echo $VERSION | cut -d'+' -f2)
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          PRETTY_NAME=$(echo $APP_NAME | sed 's/gv_//' | sed 's/_/ /g' | sed 's/\b\(.\)/\u\1/g')
+          
+          echo "version=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+          echo "pretty_name=$PRETTY_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.app_name }}-aab-v${{ steps.app_info.outputs.version }}
+          path: ${{ github.event.inputs.app_name }}/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload APK Artifact
+        if: ${{ github.event.inputs.build_apk == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.app_name }}-apk-v${{ steps.app_info.outputs.version }}
+          path: ${{ github.event.inputs.app_name }}/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Create Release
+        if: ${{ github.event.inputs.create_release == 'true' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.app_name }}-v${{ steps.app_info.outputs.version }}
+          name: "${{ steps.app_info.outputs.pretty_name }} v${{ steps.app_info.outputs.version }}"
+          body: |
+            ## ${{ steps.app_info.outputs.pretty_name }}
+            
+            **Version:** ${{ steps.app_info.outputs.version }}
+            **Version Code:** ${{ steps.app_info.outputs.version_code }}
+            **Build Date:** ${{ github.event.repository.updated_at }}
+            **Commit:** ${{ github.sha }}
+            
+            ### Download
+            - **AAB** (for Google Play): Attached below
+            - **APK** (for direct install): Attached below (if built)
+          files: |
+            ${{ github.event.inputs.app_name }}/build/app/outputs/bundle/release/app-release.aab
+            ${{ github.event.inputs.app_name }}/build/app/outputs/flutter-apk/app-release.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Summary
+        run: |
+          echo "## 🎮 Build Complete: ${{ steps.app_info.outputs.pretty_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| App Name | ${{ github.event.inputs.app_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ steps.app_info.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| AAB Built | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| APK Built | ${{ github.event.inputs.build_apk == 'true' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release Created | ${{ github.event.inputs.create_release == 'true' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "Download the AAB file from the **Artifacts** section to upload to Google Play Console." >> $GITHUB_STEP_SUMMARY
